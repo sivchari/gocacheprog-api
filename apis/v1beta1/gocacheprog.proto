@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package apis.gocacheprog.v1beta1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/sivchari/gocacheprog-api/pkg/apis/v1beta1;gocacheprogv1beta1";
+
+// CmdType is the definition of the command type.
+enum CmdType {
+  // CMD_TYPE_UNSPECIFIED is the cmd type is unknown.
+  CMD_TYPE_UNSPECIFIED = 0;
+
+  // CMD_TYPE_GET is the cmd requires get operation.
+  CMD_TYPE_GET = 1;
+
+  // CMD_TYPE_PUT is the cmd requires put operation.
+  CMD_TYPE_PUT = 2;
+
+  // CMD_TYPE_CLOSE is the cmd requires close operation.
+  CMD_TYPE_CLOSE = 3;
+}
+
+// Request is the JSON-encoded message that's sent from cmd/go to
+// the GOCACHEPROG child process over stdin. Each JSON object is on its
+// own line. A Request of Type "put" with body_size > 0 will be followed
+// by a line containing a base64-encoded JSON string literal of the body.
+message Request {
+  // id is a unique number per process across all requests.
+  // It must be echoed in the Response from the child.
+  int64 id = 1;
+
+  // command is the type of request.
+  // The cmd/go tool will only send commands that were declared
+  // as supported by the child.
+  CmdType command = 2;
+
+  // action_id is non-nil for get and puts.
+  bytes action_id = 3;
+
+  // output_id is set for Type "put" and "output-file".
+  bytes output_id = 4;
+
+  // body is the body for "put" requests. It's sent after the JSON object
+  // as a base64-encoded JSON string when body_size is non-zero.
+  // It's sent as a separate JSON value instead of being a struct field
+  // send in this JSON object so large values can be streamed in both directions.
+  // The base64 string body of a Request will always be written
+  // immediately after the JSON object and a newline.
+  bytes body = 6;
+
+  // body_size is the number of bytes of body. If zero, the body isn't written.
+  int64 body_size = 7;
+}
+
+// Response is the JSON response from the child process to cmd/go.
+//
+// With the exception of the first protocol message that the child writes to its
+// stdout with id==0 and knownCommands populated, these are only sent in
+// response to a Request from cmd/go.
+//
+// Responses can be sent in any order. The id must match the request they're
+// replying to.
+message Response {
+  // id is a unique number per process across all requests.
+  // It must be echoed in the Response from the child.
+  int64 id = 1;
+
+  // error is the error message if the command failed.
+  string error = 2;
+
+  // known_commands is included in the first message that cache helper program
+  // writes to stdout on startup (with ID==0). It includes the
+  // Request.command types that are supported by the program.
+  //
+  // This lets us extend the gracefully over time (adding "get2", etc), or
+  // fail gracefully when needed. It also lets us verify the program
+  // wants to be a cache helper.
+  repeated CmdType know_commands = 3;
+
+  // miss indicates that the request was a get and the object was not found.
+  bool miss = 4;
+
+  // output_id is set for Type "put" and "output-file".
+  bytes output_id = 5;
+
+  // size is the size of the body in bytes.
+  int64 size = 6;
+
+  // time_nanos is the time the entry was created.
+  google.protobuf.Timestamp time_nanos = 7;
+
+  // disk_path is the absolute path on disk of the output_id corresponding
+  // a "get" request's action_id (on cache hit) or a "put" request's
+  // provided output_id.
+  string disk_path = 8;
+}
